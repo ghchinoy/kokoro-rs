@@ -40,6 +40,10 @@ This tool provides a highly structured command-line interface built on `clap`, m
 ```bash
 cargo build --release
 ```
+*(Optional) To build with Apple Silicon hardware acceleration enabled:*
+```bash
+cargo build --release --features mac-acceleration
+```
 *The compiled binary will be located in `target/release/kokoro-cli`.*
 
 ### Generate speech (`speak`)
