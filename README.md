@@ -4,6 +4,14 @@ This is a native Rust command-line tool for running the [Kokoro TTS](https://hug
 
 This CLI is designed to integrate **`misaki-rs`** (for exact Python pipeline 1:1 phonetic parity and heteronym disambiguation) and **`ort`** (for direct ONNX bindings). This provides a highly optimized, cross-platform local inference experience while maintaining feature parity with the official Python implementation.
 
+## Installation
+
+You can easily install the CLI globally using `cargo` from crates.io:
+
+```bash
+cargo install kokoro-cli
+```
+
 ## Prerequisites
 
 This CLI adheres strictly to XDG Base Directory specifications. The application expects the models to be located in `~/.local/share/kokoro/models/v1.0`.
