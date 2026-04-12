@@ -51,7 +51,11 @@ cargo build --release --features mac-acceleration
 Generate audio from a given text string using the Kokoro 1.0 model. This uses the native `ort` ONNX runtime and `misaki-rs` for phonetic parity.
 
 ```bash
+# You can use a Voice ID (e.g., 0)
 kokoro-cli speak "Hello, world! This is a test of the CLI." --voice 0 --out test.wav
+
+# Or you can use a Voice Name (e.g., af_bella)
+kokoro-cli speak "Hello, world!" --voice af_bella --out test2.wav
 ```
 
 If you need to see hardware telemetry or debug ONNX execution (especially on Apple Silicon), you can pass the `--verbose` flag:

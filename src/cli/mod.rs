@@ -55,8 +55,8 @@ pub struct SpeakArgs {
     #[arg(short, long, env = "KOKORO_MODEL_DIR")]
     pub model_dir: Option<String>,
 
-    #[arg(short, long, default_value_t = 0)]
-    pub voice: u32,
+    #[arg(short, long, default_value = "0")]
+    pub voice: String,
 
     #[arg(short, long, default_value_t = 1.0)]
     pub speed: f32,
@@ -191,15 +191,52 @@ pub fn handle_speak(args: &SpeakArgs) -> Result<(), String> {
         return Err(format!("Model directory not found: {:?}", dir));
     }
 
+    let data = fs::read_to_string(&voices_json)
+        .unwrap_or_else(|_| include_str!("../../assets/voices.json").to_string());
+    
+    let voices: Vec<VoiceMeta> = serde_json::from_str(&data)
+        .map_err(|e| format!("Failed to parse voices.json: {}", e))?;
+
+    let voice_id: u32 = match args.voice.parse::<u32>() {
+        Ok(id) => id,
+        Err(_) => {
+            let query = args.voice.to_lowercase();
+            // First try an exact match (case-insensitive)
+            let exact_matches: Vec<&VoiceMeta> = voices.iter()
+                .filter(|v| v.name.to_lowercase() == query)
+                .collect();
+
+            if exact_matches.len() == 1 {
+                exact_matches[0].id
+            } else if exact_matches.is_empty() {
+                // If no exact match, try a substring match
+                let partial_matches: Vec<&VoiceMeta> = voices.iter()
+                    .filter(|v| v.name.to_lowercase().contains(&query))
+                    .collect();
+
+                if partial_matches.is_empty() {
+                    return Err(format!("No voice found matching '{}'", args.voice));
+                } else if partial_matches.len() > 1 {
+                    let matched_names: Vec<String> = partial_matches.iter().map(|v| v.name.clone()).collect();
+                    return Err(format!("Ambiguous voice '{}'. Matched multiple: {:?}", args.voice, matched_names));
+                } else {
+                    partial_matches[0].id
+                }
+            } else {
+                return Err(format!("Ambiguous voice '{}'. Matched multiple exact names.", args.voice));
+            }
+        }
+    };
+
     println!("\x1b[34mInitializing TTS with model from {:?}...\x1b[0m", dir);
     
     // Wire up the new TTS Engine
     let mut engine = crate::tts::KokoroEngine::new(&dir, args.verbose)
         .map_err(|e| format!("Failed to initialize TTS engine: {}", e))?;
 
-    println!("\x1b[34mGenerating audio for voice ID {}...\x1b[0m", args.voice);
+    println!("\x1b[34mGenerating audio for voice ID {}...\x1b[0m", voice_id);
     
-    let audio_samples = engine.generate_audio(&args.text, args.voice, args.speed, args.verbose)
+    let audio_samples = engine.generate_audio(&args.text, voice_id, args.speed, args.verbose)
         .map_err(|e| format!("Failed to generate audio: {}", e))?;
 
     // Create a valid WAV file using `hound`
