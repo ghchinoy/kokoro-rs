@@ -84,3 +84,10 @@ cargo run --release -- [COMMAND]
 ### 3. Error Handling and Mutability
 * Use `anyhow::Result` to propagate errors idiomatically rather than unwrapping or throwing panics.
 * `ort` sessions require a mutable reference (`&mut self`) to execute the `run()` graph to ensure thread safety across the ONNX runtime. Pay close attention to borrow checker constraints when working within the `KokoroEngine` struct.
+
+### 4. Hardware Acceleration (Apple Silicon)
+* **CoreML Execution Provider:** ONNX Runtime supports CoreML natively. We gate this behind a `mac-acceleration` cargo feature to avoid breaking Linux/Windows builds that may not have the required frameworks.
+* **Silencing Telemetry:** macOS CoreAnalytics frameworks dump verbose "Context leak detected" warnings to `stderr` when using CoreML via ONNX C libraries. We use the `shh` crate to temporarily capture and suppress `stderr` during `Session::run()` and `commit_from_file()` unless a `--verbose` flag is passed.
+
+### 5. CLI UX Best Practices
+* **Flexible Identifiers:** Instead of forcing users to remember numeric IDs for models or voices, the CLI parses the `voices.json` metadata to allow exact and partial string matches for voice names (e.g., `af_bella` or `bella`). Always prioritize human-readable inputs with graceful fallbacks and disambiguation errors.
