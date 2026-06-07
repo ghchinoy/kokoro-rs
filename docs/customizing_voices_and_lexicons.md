@@ -59,6 +59,7 @@ While the official repository is geared toward inference, you can train or fine-
 
 The information in this guide is aggregated from official documentation and community developments:
 * **Hugging Face Official Model Card:** [hexgrad/Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) (Details on voice blending and the Misaki G2P library).
+* **Misaki G2P Repository:** [hexgrad/misaki on GitHub](https://github.com/hexgrad/misaki) (The Grapheme-to-Phoneme converter library and custom phonetic mappings used by Kokoro).
 * **KokoClone Repository:** [KokoClone on GitHub](https://github.com/KokoClone) (Community zero-shot voice cloning).
 * **DigitalOcean Tutorials:** [Introduction to Kokoro-82M](https://www.digitalocean.com/community/tutorials/kokoro-82m-text-to-speech) (Explaining voice tensors and architecture).
 * **k2-fsa/sherpa-onnx:** [Sherpa-ONNX Documentation](https://k2-fsa.github.io/sherpa/) (Understanding the C++ implementation of lexicons).

@@ -67,6 +67,7 @@ If your script requires a shift from calm to excited, you should split your text
 
 The information in this guide is derived from the following sources and community discussions regarding Kokoro's capabilities:
 * [Kokoro TTS Official Model Card (hexgrad/Kokoro-82M)](https://huggingface.co/hexgrad/Kokoro-82M)
+* [hexgrad/misaki on GitHub](https://github.com/hexgrad/misaki) (The Grapheme-to-Phoneme converter library and custom phonetic mappings used by Kokoro)
 * [Kokoro Web Interface and Examples](https://kokoroweb.app/)
 * [Voxta AI (Handling Stage Cues and Integrations)](https://voxta.ai/)
 * General Community Discussions on Reddit (e.g., r/LocalLLaMA) regarding Kokoro's phonetic system and pause handling.
