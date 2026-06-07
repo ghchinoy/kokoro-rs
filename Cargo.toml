@@ -1,6 +1,6 @@
 [package]
 name = "kokoro-cli"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 description = "A native Rust CLI for Kokoro TTS using XDG standards and agent-first design"
 license = "MIT OR Apache-2.0"
