@@ -77,7 +77,7 @@ pub struct SpeakArgs {
     pub play: bool,
 
     /// Skip audio generation; just parse/translate text to phonemes and print the result
-    #[arg(long, alias = "phonemes-only", default_value_t = false)]
+    #[arg(long, alias = "phonemes-only", default_value_t = false, conflicts_with = "play")]
     pub dry_run: bool,
 }
 
@@ -147,7 +147,7 @@ pub fn handle_setup(args: &SetupArgs) -> Result<(), String> {
 
     println!("Downloading Kokoro v1.0 from {}...", url);
     let curl_status = std::process::Command::new("curl")
-        .args(&["-SL", "-o", archive_name, url])
+        .args(["-SL", "-o", archive_name, url])
         .status()
         .map_err(|e| format!("Failed to execute curl: {}", e))?;
 
@@ -157,7 +157,7 @@ pub fn handle_setup(args: &SetupArgs) -> Result<(), String> {
 
     println!("Verifying checksum...");
     let shasum_status = std::process::Command::new("shasum")
-        .args(&["-a", "256", archive_name])
+        .args(["-a", "256", archive_name])
         .output()
         .map_err(|e| format!("Failed to execute shasum: {}", e))?;
 
@@ -175,7 +175,7 @@ pub fn handle_setup(args: &SetupArgs) -> Result<(), String> {
 
     println!("Extracting {}...", archive_name);
     let tar_status = std::process::Command::new("tar")
-        .args(&["xvf", archive_name, "-C", dir.to_str().unwrap(), "--strip-components=1"])
+        .args(["xvf", archive_name, "-C", dir.to_str().unwrap(), "--strip-components=1"])
         .status()
         .map_err(|e| format!("Failed to execute tar: {}", e))?;
 
@@ -267,19 +267,20 @@ pub fn handle_speak(args: &SpeakArgs) -> Result<(), String> {
 
     // Create a valid WAV file using `hound`
     let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate: 24000,
+        channels: crate::tts::CHANNELS,
+        sample_rate: crate::tts::SAMPLE_RATE,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
     };
     
     let mut writer = hound::WavWriter::create(&args.out, spec)
-        .map_err(|e| format!("Failed to create dummy WAV file: {}", e))?;
+        .map_err(|e| format!("Failed to create WAV file: {}", e))?;
         
     // Write the raw float samples as 16-bit PCM
     for &sample in &audio_samples {
-        let amplitude = (sample * std::i16::MAX as f32) as i16;
-        writer.write_sample(amplitude).unwrap();
+        let amplitude = (sample * i16::MAX as f32) as i16;
+        writer.write_sample(amplitude)
+            .map_err(|e| format!("Failed to write WAV sample: {}", e))?;
     }
     writer.finalize().map_err(|e| format!("Failed to finalize WAV file: {}", e))?;
 
@@ -292,7 +293,7 @@ pub fn handle_speak(args: &SpeakArgs) -> Result<(), String> {
             .map_err(|e| format!("Failed to open audio output stream: {}", e))?;
         let sink = Sink::try_new(&stream_handle)
             .map_err(|e| format!("Failed to create audio sink: {}", e))?;
-        let source = SamplesBuffer::new(1, 24000, audio_samples.clone());
+        let source = SamplesBuffer::new(crate::tts::CHANNELS, crate::tts::SAMPLE_RATE, audio_samples);
         sink.append(source);
         sink.sleep_until_end();
     }

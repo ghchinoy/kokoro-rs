@@ -8,6 +8,11 @@ use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use misaki_rs::{G2P, Language};
 
+/// The default sample rate (24000Hz) of the Kokoro model audio output.
+pub const SAMPLE_RATE: u32 = 24000;
+/// The number of channels (1 = mono) of the Kokoro model audio output.
+pub const CHANNELS: u16 = 1;
+
 /// Represents the initialized TTS Engine containing the ONNX session
 /// and the Misaki G2P parser.
 pub struct KokoroEngine {
@@ -92,15 +97,13 @@ impl KokoroEngine {
         for c in phonemes.chars() {
             if let Some(&id) = self.vocab.get(&c) {
                 token_ids.push(id);
-            } else {
-                if !unmapped.contains(&c) {
-                    unmapped.push(c);
-                    eprintln!(
-                        "\x1b[33mWarning: Phoneme character '{}' ({}) is not present in the model's vocabulary (tokens.txt) and was skipped.\x1b[0m",
-                        c,
-                        c.escape_unicode()
-                    );
-                }
+            } else if !unmapped.contains(&c) {
+                unmapped.push(c);
+                eprintln!(
+                    "\x1b[33mWarning: Phoneme character '{}' ({}) is not present in the model's vocabulary (tokens.txt) and was skipped.\x1b[0m",
+                    c,
+                    c.escape_unicode()
+                );
             }
         }
         token_ids.push(0); // EOS
@@ -226,10 +229,10 @@ fn hex_to_byte(h: u8, l: u8) -> Option<u8> {
 fn find_markdown_link(chars: &[char], start: usize) -> Option<(usize, usize, usize)> {
     let mut bracket_depth = 0;
     let mut word_end = None;
-    for idx in start..chars.len() {
-        if chars[idx] == '[' {
+    for (idx, &c) in chars.iter().enumerate().skip(start) {
+        if c == '[' {
             bracket_depth += 1;
-        } else if chars[idx] == ']' {
+        } else if c == ']' {
             bracket_depth -= 1;
             if bracket_depth == 0 {
                 word_end = Some(idx);
@@ -241,8 +244,8 @@ fn find_markdown_link(chars: &[char], start: usize) -> Option<(usize, usize, usi
     let word_end = word_end?;
     if word_end + 2 < chars.len() && chars[word_end + 1] == '(' {
         let ipa_start = word_end + 2;
-        for idx in ipa_start..chars.len() {
-            if chars[idx] == ')' {
+        for (idx, &c) in chars.iter().enumerate().skip(ipa_start) {
+            if c == ')' {
                 return Some((word_end, ipa_start, idx));
             }
         }
@@ -251,12 +254,7 @@ fn find_markdown_link(chars: &[char], start: usize) -> Option<(usize, usize, usi
 }
 
 fn find_closing_slash(chars: &[char], start: usize) -> Option<usize> {
-    for idx in (start + 1)..chars.len() {
-        if chars[idx] == '/' {
-            return Some(idx);
-        }
-    }
-    None
+    chars.iter().skip(start + 1).position(|&c| c == '/').map(|pos| start + 1 + pos)
 }
 
 fn find_last_word_start(s: &str) -> Option<usize> {
@@ -376,6 +374,8 @@ fn process_g2p_with_overrides(g2p: &G2P, text: &str) -> Result<String> {
 }
 
 /// Helper to convert text to phonemes using the default US English G2P with inline overrides.
+/// NOTE: Language::EnglishUS is also used in KokoroEngine::new. If multi-language speech
+/// is implemented later, these call sites must stay in sync (e.g. by passing Language to this helper).
 pub fn g2p_text_to_phonemes(text: &str) -> Result<String> {
     let g2p = G2P::new(Language::EnglishUS);
     process_g2p_with_overrides(&g2p, text)
@@ -428,5 +428,38 @@ mod tests {
         assert!(phonemes.contains("kˈOkəɹO"));
         assert!(phonemes.contains("ðə"));
         assert!(phonemes.contains("fˈæst"));
+    }
+
+    #[test]
+    fn test_cli_dry_run_interactions() {
+        use crate::cli::{SpeakArgs, handle_speak};
+
+        let args = SpeakArgs {
+            text: "The [Kokoro](/kˈOkəɹO/) model is fast.".to_string(),
+            model_dir: None,
+            voice: "0".to_string(),
+            speed: 1.0,
+            out: "output.wav".to_string(),
+            phonemes: false,
+            verbose: false,
+            play: false,
+            dry_run: true,
+        };
+        let result = handle_speak(&args);
+        assert!(result.is_ok());
+
+        let args_raw = SpeakArgs {
+            text: "kˈOkəɹO".to_string(),
+            model_dir: None,
+            voice: "0".to_string(),
+            speed: 1.0,
+            out: "output.wav".to_string(),
+            phonemes: true,
+            verbose: false,
+            play: false,
+            dry_run: true,
+        };
+        let result_raw = handle_speak(&args_raw);
+        assert!(result_raw.is_ok());
     }
 }
