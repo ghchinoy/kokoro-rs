@@ -69,11 +69,42 @@ impl KokoroEngine {
 
     /// Generates raw float32 audio samples from input text.
     pub fn generate_audio(&mut self, text: &str, voice_id: u32, speed: f32, verbose: bool) -> Result<Vec<f32>> {
-        // STEP 1: Convert text to phonemes using Misaki
-        let (phonemes, _) = self.g2p.g2p(text).map_err(|e| anyhow::anyhow!("G2P error: {:?}", e))?;
-        println!("  -> [Misaki-rs] Phonemes: {}", phonemes);
+        // Parse markdown-style and plain-style inline phoneme overrides
+        let segments = parse_inline_overrides(text);
         
-        self.generate_audio_from_phonemes(&phonemes, voice_id, speed, verbose)
+        let mut full_phonemes = String::new();
+        for segment in segments {
+            match segment {
+                Segment::Normal(chunk) => {
+                    if chunk.trim().is_empty() {
+                        full_phonemes.push_str(&chunk);
+                    } else {
+                        let (p, _) = self.g2p.g2p(&chunk).map_err(|e| anyhow::anyhow!("G2P error: {:?}", e))?;
+                        let mut p_cleaned = p;
+                        
+                        if chunk.starts_with(char::is_whitespace) && !p_cleaned.starts_with(char::is_whitespace) && !full_phonemes.ends_with(char::is_whitespace) && !full_phonemes.is_empty() {
+                            full_phonemes.push(' ');
+                        }
+                        
+                        if full_phonemes.ends_with(char::is_whitespace) {
+                            p_cleaned = p_cleaned.trim_start().to_string();
+                        }
+                        
+                        full_phonemes.push_str(&p_cleaned);
+                    }
+                }
+                Segment::Phonemes(ipa) => {
+                    if !full_phonemes.is_empty() && !full_phonemes.ends_with(char::is_whitespace) {
+                        full_phonemes.push(' ');
+                    }
+                    full_phonemes.push_str(&ipa);
+                }
+            }
+        }
+        
+        println!("  -> [Misaki-rs] Phonemes: {}", full_phonemes);
+        
+        self.generate_audio_from_phonemes(&full_phonemes, voice_id, speed, verbose)
     }
 
     /// Generates raw float32 audio samples directly from raw phonemes.
@@ -169,5 +200,197 @@ impl KokoroEngine {
             }
         }
         Ok(vocab)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Segment {
+    Normal(String),
+    Phonemes(String),
+}
+
+fn percent_decode(s: &str) -> String {
+    let mut bytes = Vec::with_capacity(s.len());
+    let mut chars = s.as_bytes().iter();
+    while let Some(&b) = chars.next() {
+        if b == b'%' {
+            if let (Some(&h), Some(&l)) = (chars.next(), chars.next()) {
+                if let Some(decoded) = hex_to_byte(h, l) {
+                    bytes.push(decoded);
+                    continue;
+                }
+                bytes.push(b'%');
+                bytes.push(h);
+                bytes.push(l);
+            } else {
+                bytes.push(b'%');
+            }
+        } else {
+            bytes.push(b);
+        }
+    }
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+fn hex_to_byte(h: u8, l: u8) -> Option<u8> {
+    let h_val = (h as char).to_digit(16)?;
+    let l_val = (l as char).to_digit(16)?;
+    Some((h_val << 4 | l_val) as u8)
+}
+
+fn find_markdown_link(chars: &[char], start: usize) -> Option<(usize, usize, usize)> {
+    let mut bracket_depth = 0;
+    let mut word_end = None;
+    for idx in start..chars.len() {
+        if chars[idx] == '[' {
+            bracket_depth += 1;
+        } else if chars[idx] == ']' {
+            bracket_depth -= 1;
+            if bracket_depth == 0 {
+                word_end = Some(idx);
+                break;
+            }
+        }
+    }
+    
+    let word_end = word_end?;
+    if word_end + 2 < chars.len() && chars[word_end + 1] == '(' {
+        let ipa_start = word_end + 2;
+        for idx in ipa_start..chars.len() {
+            if chars[idx] == ')' {
+                return Some((word_end, ipa_start, idx));
+            }
+        }
+    }
+    None
+}
+
+fn find_closing_slash(chars: &[char], start: usize) -> Option<usize> {
+    for idx in (start + 1)..chars.len() {
+        if chars[idx] == '/' {
+            return Some(idx);
+        }
+    }
+    None
+}
+
+fn find_last_word_start(s: &str) -> Option<usize> {
+    let bytes = s.as_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+    let mut idx = bytes.len();
+    while idx > 0 {
+        let c = bytes[idx - 1] as char;
+        if c.is_alphanumeric() || c == '_' || c == '-' {
+            idx -= 1;
+        } else {
+            break;
+        }
+    }
+    if idx < bytes.len() {
+        Some(idx)
+    } else {
+        None
+    }
+}
+
+fn parse_inline_overrides(text: &str) -> Vec<Segment> {
+    let mut segments = Vec::new();
+    let mut current_normal = String::new();
+    let mut i = 0;
+    let chars: Vec<char> = text.chars().collect();
+    
+    while i < chars.len() {
+        if chars[i] == '[' {
+            if let Some((_word_end, ipa_start, ipa_end)) = find_markdown_link(&chars, i) {
+                if !current_normal.is_empty() {
+                    segments.push(Segment::Normal(current_normal));
+                    current_normal = String::new();
+                }
+                let mut ipa: String = chars[ipa_start..ipa_end].iter().collect();
+                if ipa.starts_with('/') {
+                    ipa.remove(0);
+                }
+                if ipa.ends_with('/') {
+                    ipa.pop();
+                }
+                let decoded_ipa = percent_decode(&ipa);
+                segments.push(Segment::Phonemes(decoded_ipa));
+                i = ipa_end + 1; // move past ')'
+                continue;
+            }
+        }
+        
+        if chars[i] == '/' {
+            if let Some(closing_idx) = find_closing_slash(&chars, i) {
+                let preceding_trimmed = current_normal.trim_end();
+                if !preceding_trimmed.is_empty() && preceding_trimmed.chars().last().unwrap().is_alphanumeric() {
+                    if let Some(word_start) = find_last_word_start(preceding_trimmed) {
+                        let normal_prefix = &preceding_trimmed[..word_start];
+                        if !normal_prefix.is_empty() {
+                            segments.push(Segment::Normal(normal_prefix.to_string()));
+                        }
+                        current_normal = String::new();
+                        
+                        let ipa: String = chars[i+1..closing_idx].iter().collect();
+                        let decoded_ipa = percent_decode(&ipa);
+                        segments.push(Segment::Phonemes(decoded_ipa));
+                        i = closing_idx + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        
+        current_normal.push(chars[i]);
+        i += 1;
+    }
+    
+    if !current_normal.is_empty() {
+        segments.push(Segment::Normal(current_normal));
+    }
+    
+    segments
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_inline_overrides_markdown() {
+        let text = "The [Kokoro](/kˈOkəɹO/) model...";
+        let segments = parse_inline_overrides(text);
+        assert_eq!(
+            segments,
+            vec![
+                Segment::Normal("The ".to_string()),
+                Segment::Phonemes("kˈOkəɹO".to_string()),
+                Segment::Normal(" model...".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_parse_inline_overrides_plain() {
+        let text = "The Kokoro /k%CB%88Ok%C9%99%C9%B9O/ model...";
+        let segments = parse_inline_overrides(text);
+        assert_eq!(
+            segments,
+            vec![
+                Segment::Normal("The ".to_string()),
+                Segment::Phonemes("kˈOkəɹO".to_string()),
+                Segment::Normal(" model...".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_percent_decode() {
+        assert_eq!(percent_decode("hello%20world"), "hello world");
+        assert_eq!(percent_decode("%CB%88"), "ˈ");
+        assert_eq!(percent_decode("%C9%99"), "ə");
+        assert_eq!(percent_decode("%C9%B9"), "ɹ");
     }
 }
