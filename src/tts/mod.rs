@@ -87,9 +87,20 @@ impl KokoroEngine {
         // Kokoro sequences must begin and end with 0 (which acts as BOS/EOS/PAD)
         let mut token_ids: Vec<i64> = Vec::with_capacity(phonemes.chars().count() + 2);
         token_ids.push(0); // BOS
+        
+        let mut unmapped = Vec::new();
         for c in phonemes.chars() {
             if let Some(&id) = self.vocab.get(&c) {
                 token_ids.push(id);
+            } else {
+                if !unmapped.contains(&c) {
+                    unmapped.push(c);
+                    eprintln!(
+                        "\x1b[33mWarning: Phoneme character '{}' ({}) is not present in the model's vocabulary (tokens.txt) and was skipped.\x1b[0m",
+                        c,
+                        c.escape_unicode()
+                    );
+                }
             }
         }
         token_ids.push(0); // EOS
