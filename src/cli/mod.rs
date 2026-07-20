@@ -75,6 +75,10 @@ pub struct SpeakArgs {
     /// Play the generated audio directly to the system speakers
     #[arg(long, default_value_t = false)]
     pub play: bool,
+
+    /// Skip audio generation; just parse/translate text to phonemes and print the result
+    #[arg(long, alias = "phonemes-only", default_value_t = false)]
+    pub dry_run: bool,
 }
 
 #[derive(Args, Debug)]
@@ -191,6 +195,17 @@ pub fn handle_setup(args: &SetupArgs) -> Result<(), String> {
 }
 
 pub fn handle_speak(args: &SpeakArgs) -> Result<(), String> {
+    if args.dry_run {
+        let phonemes = if args.phonemes {
+            args.text.clone()
+        } else {
+            crate::tts::g2p_text_to_phonemes(&args.text)
+                .map_err(|e| format!("Phoneme translation error: {}", e))?
+        };
+        println!("{}", phonemes);
+        return Ok(());
+    }
+
     let dir = get_default_model_dir(&args.model_dir);
     let voices_json = dir.join("voices.json");
 

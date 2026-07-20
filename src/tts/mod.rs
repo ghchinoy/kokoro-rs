@@ -67,41 +67,15 @@ impl KokoroEngine {
         })
     }
 
+    /// Translates input text into phonemes, taking inline overrides into account,
+    /// utilizing the pre-loaded G2P engine.
+    pub fn text_to_phonemes(&self, text: &str) -> Result<String> {
+        process_g2p_with_overrides(&self.g2p, text)
+    }
+
     /// Generates raw float32 audio samples from input text.
     pub fn generate_audio(&mut self, text: &str, voice_id: u32, speed: f32, verbose: bool) -> Result<Vec<f32>> {
-        // Parse markdown-style and plain-style inline phoneme overrides
-        let segments = parse_inline_overrides(text);
-        
-        let mut full_phonemes = String::new();
-        for segment in segments {
-            match segment {
-                Segment::Normal(chunk) => {
-                    if chunk.trim().is_empty() {
-                        full_phonemes.push_str(&chunk);
-                    } else {
-                        let (p, _) = self.g2p.g2p(&chunk).map_err(|e| anyhow::anyhow!("G2P error: {:?}", e))?;
-                        let mut p_cleaned = p;
-                        
-                        if chunk.starts_with(char::is_whitespace) && !p_cleaned.starts_with(char::is_whitespace) && !full_phonemes.ends_with(char::is_whitespace) && !full_phonemes.is_empty() {
-                            full_phonemes.push(' ');
-                        }
-                        
-                        if full_phonemes.ends_with(char::is_whitespace) {
-                            p_cleaned = p_cleaned.trim_start().to_string();
-                        }
-                        
-                        full_phonemes.push_str(&p_cleaned);
-                    }
-                }
-                Segment::Phonemes(ipa) => {
-                    if !full_phonemes.is_empty() && !full_phonemes.ends_with(char::is_whitespace) {
-                        full_phonemes.push(' ');
-                    }
-                    full_phonemes.push_str(&ipa);
-                }
-            }
-        }
-        
+        let full_phonemes = self.text_to_phonemes(text)?;
         println!("  -> [Misaki-rs] Phonemes: {}", full_phonemes);
         
         self.generate_audio_from_phonemes(&full_phonemes, voice_id, speed, verbose)
@@ -354,6 +328,48 @@ fn parse_inline_overrides(text: &str) -> Vec<Segment> {
     segments
 }
 
+/// Shared helper to convert text to phonemes with inline overrides using a provided G2P instance.
+fn process_g2p_with_overrides(g2p: &G2P, text: &str) -> Result<String> {
+    let segments = parse_inline_overrides(text);
+    
+    let mut full_phonemes = String::new();
+    for segment in segments {
+        match segment {
+            Segment::Normal(chunk) => {
+                if chunk.trim().is_empty() {
+                    full_phonemes.push_str(&chunk);
+                } else {
+                    let (p, _) = g2p.g2p(&chunk).map_err(|e| anyhow::anyhow!("G2P error: {:?}", e))?;
+                    let mut p_cleaned = p;
+                    
+                    if chunk.starts_with(char::is_whitespace) && !p_cleaned.starts_with(char::is_whitespace) && !full_phonemes.ends_with(char::is_whitespace) && !full_phonemes.is_empty() {
+                        full_phonemes.push(' ');
+                    }
+                    
+                    if full_phonemes.ends_with(char::is_whitespace) {
+                        p_cleaned = p_cleaned.trim_start().to_string();
+                    }
+                    
+                    full_phonemes.push_str(&p_cleaned);
+                }
+            }
+            Segment::Phonemes(ipa) => {
+                if !full_phonemes.is_empty() && !full_phonemes.ends_with(char::is_whitespace) {
+                    full_phonemes.push(' ');
+                }
+                full_phonemes.push_str(&ipa);
+            }
+        }
+    }
+    Ok(full_phonemes)
+}
+
+/// Helper to convert text to phonemes using the default US English G2P with inline overrides.
+pub fn g2p_text_to_phonemes(text: &str) -> Result<String> {
+    let g2p = G2P::new(Language::EnglishUS);
+    process_g2p_with_overrides(&g2p, text)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,5 +408,14 @@ mod tests {
         assert_eq!(percent_decode("%CB%88"), "ˈ");
         assert_eq!(percent_decode("%C9%99"), "ə");
         assert_eq!(percent_decode("%C9%B9"), "ɹ");
+    }
+
+    #[test]
+    fn test_g2p_text_to_phonemes() {
+        let text = "The [Kokoro](/kˈOkəɹO/) model is fast.";
+        let phonemes = g2p_text_to_phonemes(text).unwrap();
+        assert!(phonemes.contains("kˈOkəɹO"));
+        assert!(phonemes.contains("ðə"));
+        assert!(phonemes.contains("fˈæst"));
     }
 }

@@ -15,10 +15,12 @@ Before you can publish a package, you need to set up an account and authenticate
    * Click "New Token", give it a name (e.g., "macbook-pro"), and copy the token.
 
 3. **Authenticate your local Cargo:**
-   Run the following command in your terminal, replacing `<your-token>` with the token you just copied:
+   Run the following command in your terminal, and paste the token you just copied:
    ```bash
-   cargo login <your-token>
+   cargo login
    ```
+   Then paste your token.
+
    *This saves the token to `~/.cargo/credentials` so Cargo can authenticate future publish requests.*
 
 ## 2. Preparing your `Cargo.toml`
