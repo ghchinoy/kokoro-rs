@@ -71,6 +71,10 @@ pub struct SpeakArgs {
     /// Show verbose output (includes native hardware execution warnings)
     #[arg(long, default_value_t = false)]
     pub verbose: bool,
+
+    /// Play the generated audio directly to the system speakers
+    #[arg(long, default_value_t = false)]
+    pub play: bool,
 }
 
 #[derive(Args, Debug)]
@@ -258,11 +262,25 @@ pub fn handle_speak(args: &SpeakArgs) -> Result<(), String> {
         .map_err(|e| format!("Failed to create dummy WAV file: {}", e))?;
         
     // Write the raw float samples as 16-bit PCM
-    for sample in audio_samples {
+    for &sample in &audio_samples {
         let amplitude = (sample * std::i16::MAX as f32) as i16;
         writer.write_sample(amplitude).unwrap();
     }
     writer.finalize().map_err(|e| format!("Failed to finalize WAV file: {}", e))?;
+
+    if args.play {
+        println!("\x1b[34mPlaying generated audio...\x1b[0m");
+        use rodio::{OutputStream, Sink};
+        use rodio::buffer::SamplesBuffer;
+        
+        let (_stream, stream_handle) = OutputStream::try_default()
+            .map_err(|e| format!("Failed to open audio output stream: {}", e))?;
+        let sink = Sink::try_new(&stream_handle)
+            .map_err(|e| format!("Failed to create audio sink: {}", e))?;
+        let source = SamplesBuffer::new(1, 24000, audio_samples.clone());
+        sink.append(source);
+        sink.sleep_until_end();
+    }
 
     println!("\x1b[32mSuccess!\x1b[0m Audio saved to {}", args.out);
     Ok(())
